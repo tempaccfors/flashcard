@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline'; connect-src 'none'">
+<title>Flashcards</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,sans-serif;background:#111;color:#eee;padding:calc(env(safe-area-inset-top) + 8px) 12px 20px}
+button,select,textarea{font:inherit;color:inherit;background:#222;border:1px solid #444;border-radius:8px;padding:10px}
+button:active{background:#333}
+.row{display:flex;gap:8px;margin:10px 0}
+.row>*{flex:1}
+#card{min-height:45vh;background:#1c1c1e;border-radius:14px;padding:16px;display:flex;align-items:center;justify-content:center;margin:10px 0;overflow:auto}
+#card.back{background:#16263a}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:15px/1.4 Menlo,monospace}
+textarea{width:100%;min-height:80px;font-family:Menlo,monospace;font-size:14px;margin-bottom:8px}
+.hidden{display:none}
+#list div{display:flex;gap:8px;align-items:center;border-bottom:1px solid #333;padding:6px 0}
+#list pre{flex:1;font-size:12px;max-height:60px;overflow:hidden}
+#count{text-align:center;color:#888}
+</style>
+</head>
+<body>
+<div class="row">
+  <select id="deckSel"></select>
+  <button id="newDeck">+ Deck</button>
+  <button id="delDeck">Delete</button>
+</div>
+<div class="row">
+  <button id="tabStudy">Study</button>
+  <button id="tabEdit">Edit</button>
+</div>
+
+<section id="study">
+  <div id="card"><pre id="cardText"></pre></div>
+  <div id="count"></div>
+  <div class="row">
+    <button id="prev">◀</button>
+    <button id="shuffle">Shuffle</button>
+    <button id="next">▶</button>
+  </div>
+</section>
+
+<section id="edit" class="hidden">
+  <textarea id="front" placeholder="Front (e.g. syntax)"></textarea>
+  <textarea id="back" placeholder="Back (e.g. meaning)"></textarea>
+  <button id="add" style="width:100%">Add card</button>
+  <div id="list"></div>
+  <div class="row">
+    <button id="export">Export backup</button>
+    <button id="importBtn">Import</button>
+  </div>
+  <input type="file" id="importFile" accept=".json,application/json" class="hidden">
+</section>
+
+<script>
+const KEY='flashcards_v1';
+const $=id=>document.getElementById(id);
+let data=JSON.parse(localStorage.getItem(KEY)||'null')||{decks:{'Default':[]},current:'Default'};
+let order=[],pos=0,flipped=false;
+
+const save=()=>localStorage.setItem(KEY,JSON.stringify(data));
+const cards=()=>data.decks[data.current]||[];
+
+function renderDecks(){
+  $('deckSel').innerHTML='';
+  for(const name of Object.keys(data.decks)){
+    const o=document.createElement('option');o.value=o.textContent=name;
+    if(name===data.current)o.selected=true;
+    $('deckSel').appendChild(o);
+  }
+}
+function resetOrder(){order=cards().map((_,i)=>i);pos=0;flipped=false;}
+function renderCard(){
+  const c=cards();
+  if(!c.length){$('cardText').textContent='No cards. Add some in Edit.';$('count').textContent='';$('card').className='';return;}
+  const card=c[order[pos]];
+  $('cardText').textContent=flipped?card.b:card.f;
+  $('card').className=flipped?'back':'';
+  $('count').textContent=`${pos+1} / ${c.length}`;
+}
+function renderList(){
+  $('list').innerHTML='';
+  cards().forEach((card,i)=>{
+    const row=document.createElement('div');
+    const p=document.createElement('pre');p.textContent=card.f+'\n→ '+card.b;
+    const del=document.createElement('button');del.textContent='✕';
+    del.onclick=()=>{cards().splice(i,1);save();resetOrder();renderList();renderCard();};
+    row.append(p,del);$('list').appendChild(row);
+  });
+}
+function refresh(){renderDecks();resetOrder();renderCard();renderList();}
+
+// Study controls
+$('card').onclick=()=>{if(cards().length){flipped=!flipped;renderCard();}};
+$('next').onclick=()=>{const n=cards().length;if(n){pos=(pos+1)%n;flipped=false;renderCard();}};
+$('prev').onclick=()=>{const n=cards().length;if(n){pos=(pos-1+n)%n;flipped=false;renderCard();}};
+$('shuffle').onclick=()=>{for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];}pos=0;flipped=false;renderCard();};
+
+// Decks
+$('deckSel').onchange=e=>{data.current=e.target.value;save();refresh();};
+$('newDeck').onclick=()=>{const n=prompt('Deck name?');if(n&&!data.decks[n]){data.decks[n]=[];data.current=n;save();refresh();}};
+$('delDeck').onclick=()=>{if(Object.keys(data.decks).length<2)return alert('Keep at least one deck');if(confirm(`Delete "${data.current}"?`)){delete data.decks[data.current];data.current=Object.keys(data.decks)[0];save();refresh();}};
+
+// Add card (keeps indentation for code)
+$('add').onclick=()=>{const f=$('front').value,b=$('back').value;if(!f.trim()||!b.trim())return;cards().push({f,b});save();$('front').value=$('back').value='';resetOrder();renderList();renderCard();$('front').focus();};
+
+// Tabs
+$('tabStudy').onclick=()=>{$('study').classList.remove('hidden');$('edit').classList.add('hidden');};
+$('tabEdit').onclick=()=>{$('edit').classList.remove('hidden');$('study').classList.add('hidden');};
+
+// Backup
+$('export').onclick=()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='flashcards-backup.json';a.click();};
+$('importBtn').onclick=()=>$('importFile').click();
+$('importFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const d=JSON.parse(await file.text());if(!d.decks)throw 0;if(confirm('Replace all decks with backup?')){data=d;if(!data.decks[data.current])data.current=Object.keys(data.decks)[0];save();refresh();}}catch{alert('Invalid backup file');}e.target.value='';};
+
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+refresh();
+</script>
+</body>
+</html>
